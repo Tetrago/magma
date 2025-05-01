@@ -1,0 +1,14 @@
+[package]
+name = "magma"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies.magma-proc]
+path = "magma-proc"
+
+[dependencies.vulkan-sys]
+path = "vulkan-sys"
+
+[dev-dependencies.glfw]
+version = "0.59"
+features = ["vulkan"]
