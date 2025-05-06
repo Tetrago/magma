@@ -15,7 +15,7 @@ use std::ffi::c_void;
 #[derive(magma_proc::Object)]
 #[object(builder = Builder)]
 pub struct Instance {
-    #[handle]
+    #[object(handle)]
     handle: vk::Instance,
     #[cfg(debug_assertions)]
     debug_messenger: vk::DebugUtilsMessengerEXT,
@@ -249,10 +249,10 @@ impl Drop for Instance {
 #[builder(target = Instance)]
 pub struct Builder {
     app_name: String,
-    #[skip]
+    #[builder(None)]
     app_version: u32,
     engine_name: String,
-    #[skip]
+    #[builder(None)]
     engine_version: u32,
     #[builder(default = vk::API_VERSION_1_0)]
     api_version: u32,
