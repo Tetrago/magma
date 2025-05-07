@@ -5,6 +5,11 @@ pub enum Error {
     Vulkan(VulkanError),
     MissingInstanceExtensions(Vec<String>),
     MissingInstanceLayers(Vec<String>),
+    InvalidQueueCount {
+        requested: u32,
+        index: u32,
+        available: u32,
+    },
 }
 
 impl fmt::Debug for Error {
@@ -29,6 +34,15 @@ impl fmt::Debug for Error {
 
                 Ok(())
             }
+            Error::InvalidQueueCount {
+                requested,
+                index,
+                available,
+            } => write!(
+                f,
+                "{} queues requested for queue family ({}) that only supports {}",
+                requested, index, available
+            ),
         }
     }
 }

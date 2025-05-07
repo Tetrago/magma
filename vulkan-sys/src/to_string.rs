@@ -1,11 +1,15 @@
 use crate::vk;
 use std::fmt;
 
-pub fn to_string(bytes: &[i8]) -> String {
+pub fn to_string<T>(bytes: &[T]) -> String
+where
+    T: TryInto<u8> + Copy,
+{
     let bytes: Vec<_> = bytes
         .iter()
-        .take_while(|&&x| x != 0)
-        .map(|&x| x as u8)
+        .copied()
+        .filter_map(|x| x.try_into().ok())
+        .take_while(|&x| x != 0)
         .collect();
 
     String::from_utf8_lossy(&bytes).to_string()

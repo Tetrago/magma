@@ -1,6 +1,8 @@
 use crate::Instance;
 use crate::Result;
+use crate::predicate;
 use std::fmt;
+use std::ptr::null;
 use std::ptr::null_mut;
 use vulkan_sys::call;
 use vulkan_sys::vk;
@@ -11,6 +13,7 @@ pub struct PhysicalDevice {
     pub properties: vk::PhysicalDeviceProperties,
     pub features: vk::PhysicalDeviceFeatures,
     pub queue_families: Vec<vk::QueueFamilyProperties>,
+    pub extensions: Vec<vk::ExtensionProperties>,
 }
 
 impl PhysicalDevice {
@@ -39,12 +42,12 @@ impl TryFrom<vk::PhysicalDevice> for PhysicalDevice {
         }
 
         let mut count = 0u32;
-        let mut queue_families = Vec::<vk::QueueFamilyProperties>::new();
-
         unsafe {
             vk::get_physical_device_queue_family_properties(value, &mut count, null_mut());
+        }
 
-            queue_families.resize(count as usize, Default::default());
+        let mut queue_families = vec![vk::QueueFamilyProperties::default(); count as usize];
+        unsafe {
             vk::get_physical_device_queue_family_properties(
                 value,
                 &mut count,
@@ -52,11 +55,28 @@ impl TryFrom<vk::PhysicalDevice> for PhysicalDevice {
             );
         }
 
+        let mut count = 0u32;
+        call!(vk::enumerate_device_extension_properties(
+            value,
+            null(),
+            &mut count,
+            null_mut()
+        ))?;
+
+        let mut extensions = vec![vk::ExtensionProperties::default(); count as usize];
+        call!(vk::enumerate_device_extension_properties(
+            value,
+            null(),
+            &mut count,
+            extensions.as_mut_ptr(),
+        ))?;
+
         Ok(Self {
             handle: value,
             properties,
             features,
             queue_families,
+            extensions,
         })
     }
 }
@@ -115,28 +135,29 @@ impl Selector {
     }
 
     pub fn require_graphics_queue_family(self) -> Self {
-        self.filter(|device| {
-            device
-                .queue_families
-                .iter()
-                .any(|queue_family| queue_family.queue_flags & vk::QUEUE_GRAPHICS_BIT == 0)
-        })
+        let mut predicate = predicate::queue_family_graphics_support();
+        self.filter(|device| device.queue_families.iter().any(&mut predicate))
     }
 
     pub fn require_present_support(self, surface: vk::SurfaceKHR) -> Self {
         self.filter(|device| {
-            device.queue_families.iter().enumerate().any(|(i, _)| {
-                let mut present_support: vk::Bool32 = vk::FALSE;
+            let mut predicate = predicate::queue_family_index_present_support(device, surface);
 
-                call!(vk::get_physical_device_surface_support_khr(
-                    device.handle,
-                    i as u32,
-                    surface,
-                    &mut present_support,
-                ))
-                .ok();
+            device
+                .queue_families
+                .iter()
+                .enumerate()
+                .any(|(i, _)| predicate(i as u32))
+        })
+    }
 
-                present_support == vk::FALSE
+    pub fn require_extensions(self, extensions: &[String]) -> Self {
+        self.filter(|device| {
+            extensions.iter().all(|name| {
+                device
+                    .extensions
+                    .iter()
+                    .any(|props| props.to_string() == *name)
             })
         })
     }

@@ -15,7 +15,7 @@ use std::ffi::c_void;
 #[derive(magma_proc::Object)]
 #[object(builder = Builder)]
 pub struct Instance {
-    #[object(handle)]
+    #[object]
     handle: vk::Instance,
     #[cfg(debug_assertions)]
     debug_messenger: vk::DebugUtilsMessengerEXT,
