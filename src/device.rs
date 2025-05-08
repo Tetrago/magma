@@ -12,6 +12,7 @@ use vulkan_sys::vk;
 pub struct Device {
     #[object]
     handle: vk::Device,
+    physical_device: PhysicalDevice,
 }
 
 impl Device {
@@ -80,7 +81,23 @@ impl Device {
             });
         });
 
-        Ok(Self { handle })
+        Ok(Self {
+            handle,
+            physical_device,
+        })
+    }
+
+    pub fn physical_device(&self) -> &PhysicalDevice {
+        &self.physical_device
+    }
+}
+
+impl Drop for Device {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = vk::device_wait_idle(self.handle);
+            vk::destroy_device(self.handle, null());
+        }
     }
 }
 

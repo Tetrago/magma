@@ -1,10 +1,12 @@
 use crate::Instance;
 use crate::Result;
+use crate::Swapchain;
 use crate::predicate;
 use std::fmt;
 use std::ptr::null;
 use std::ptr::null_mut;
 use vulkan_sys::call;
+use vulkan_sys::to_string;
 use vulkan_sys::vk;
 
 #[derive(Debug, Clone)]
@@ -148,6 +150,22 @@ impl Selector {
                 .iter()
                 .enumerate()
                 .any(|(i, _)| predicate(i as u32))
+        })
+    }
+
+    pub fn require_swapchain_support(self, surface: vk::SurfaceKHR) -> Self {
+        self.filter(|device| {
+            device
+                .extensions
+                .iter()
+                .any(|props| props.to_string() == to_string(vk::KHR_SWAPCHAIN_EXTENSION_NAME))
+        })
+        .filter(|device| {
+            if let Ok(details) = Swapchain::query_details(device, surface) {
+                !details.surface_formats.is_empty() && !details.present_modes.is_empty()
+            } else {
+                false
+            }
         })
     }
 

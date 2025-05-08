@@ -2,9 +2,11 @@ use magma::Device;
 use magma::Instance;
 use magma::PhysicalDevice;
 use magma::Result;
+use magma::Swapchain;
 use magma::predicate;
 use magma::to_string;
 use magma::vk;
+use std::sync::Arc;
 
 fn main() -> Result<()> {
     let mut glfw = glfw::init(glfw::fail_on_errors).unwrap();
@@ -35,17 +37,18 @@ fn main() -> Result<()> {
             .ok();
     }
 
+    let device_extensions = [to_string(vk::KHR_SWAPCHAIN_EXTENSION_NAME)];
+
     let physical_device = PhysicalDevice::selector(&instance)?
         .require_graphics_queue_family()
         .require_present_support(surface)
-        .require_extensions(&[to_string(vk::KHR_SWAPCHAIN_EXTENSION_NAME)])
         .prefer_discrete()
+        .require_swapchain_support(surface)
         .select()
         .expect("Could not find suitable device");
 
     let mut queue: Option<vk::Queue> = None;
-
-    let _device = {
+    let device = {
         let queue_family = {
             let mut graphics = predicate::queue_family_graphics_support();
             let mut present =
@@ -60,12 +63,27 @@ fn main() -> Result<()> {
                 .0 as u32
         };
 
-        Device::builder()
-            .physical_device(physical_device)
-            .order_queue(queue_family, &mut queue)
-            .push_extensions(to_string(vk::KHR_SWAPCHAIN_EXTENSION_NAME))
-            .build()?;
+        Arc::new(
+            Device::builder()
+                .physical_device(physical_device)
+                .order_queue(queue_family, &mut queue)
+                .extend_extensions(device_extensions)
+                .build()?,
+        )
     };
+
+    let (width, height) = window.get_framebuffer_size();
+
+    let _swapchain = Swapchain::builder()
+        .device(device)
+        .surface(surface)
+        .preferred_surface_format(vk::SurfaceFormatKHR {
+            format: vk::FORMAT_B8G8R8A8_SRGB,
+            color_space: vk::COLOR_SPACE_SRGB_NONLINEAR_KHR,
+        })
+        .preferred_present_mode(vk::PRESENT_MODE_MAILBOX_KHR)
+        .preferred_extent(width as u32, height as u32)
+        .build()?;
 
     'main: loop {
         glfw.poll_events();
