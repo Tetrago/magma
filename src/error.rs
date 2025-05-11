@@ -1,6 +1,7 @@
 use std::fmt;
 use vulkan_sys::VulkanError;
 
+#[derive(Clone)]
 pub enum Error {
     Vulkan(VulkanError),
     MissingInstanceExtensions(Vec<String>),
@@ -50,6 +51,12 @@ impl fmt::Debug for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
+    }
+}
+
+impl From<&Error> for Error {
+    fn from(value: &Error) -> Self {
+        value.clone()
     }
 }
 

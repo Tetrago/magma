@@ -214,7 +214,7 @@ pub struct Builder {
     surface: Option<vk::SurfaceKHR>,
     preferred_surface_format: Option<vk::SurfaceFormatKHR>,
     preferred_present_mode: Option<vk::PresentModeKHR>,
-    #[builder(required, None)]
+    #[builder(required, skip)]
     preferred_extent: Option<(u32, u32)>,
     shared_queue_families: Option<HashSet<u32>>,
 }

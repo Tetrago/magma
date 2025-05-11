@@ -46,6 +46,7 @@
 
               vulkan-loader
               vulkan-validation-layers
+              shaderc
             ];
           };
         }

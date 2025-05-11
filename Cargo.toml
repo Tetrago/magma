@@ -3,6 +3,9 @@ name = "magma"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+example_shaders = ["walkdir", "regex"]
+
 [dependencies.magma-proc]
 path = "magma-proc"
 
@@ -12,3 +15,15 @@ path = "vulkan-sys"
 [dev-dependencies.glfw]
 version = "0.59"
 features = ["vulkan"]
+
+[build-dependencies.walkdir]
+version = "2.5"
+optional = true
+
+[build-dependencies.regex]
+version = "1.11"
+optional = true
+
+[[example]]
+name = "triangle"
+required-features = ["example_shaders"]

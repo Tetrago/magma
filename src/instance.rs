@@ -249,10 +249,10 @@ impl Drop for Instance {
 #[builder(target = Instance)]
 pub struct Builder {
     app_name: String,
-    #[builder(None)]
+    #[builder(skip)]
     app_version: u32,
     engine_name: String,
-    #[builder(None)]
+    #[builder(skip)]
     engine_version: u32,
     #[builder(default = vk::API_VERSION_1_0)]
     api_version: u32,

@@ -26,4 +26,17 @@ pub mod vk {
     pub const API_VERSION_1_0: u32 = make_api_version(0, 1, 0, 0);
     pub const API_VERSION_1_1: u32 = make_api_version(0, 1, 1, 0);
     pub const API_VERSION_1_2: u32 = make_api_version(0, 1, 2, 0);
+
+    pub type Enum = u32;
+}
+
+#[macro_export]
+macro_rules! bool_cast {
+    ($expr:expr) => {
+        if $expr {
+            ::vulkan_sys::vk::TRUE
+        } else {
+            ::vulkan_sys::vk::FALSE
+        }
+    };
 }

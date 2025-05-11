@@ -1,6 +1,9 @@
 use magma::Device;
+use magma::ImageView;
 use magma::Instance;
 use magma::PhysicalDevice;
+use magma::Pipeline;
+use magma::RenderPass;
 use magma::Result;
 use magma::Swapchain;
 use magma::predicate;
@@ -74,8 +77,8 @@ fn main() -> Result<()> {
 
     let (width, height) = window.get_framebuffer_size();
 
-    let _swapchain = Swapchain::builder()
-        .device(device)
+    let swapchain = Swapchain::builder()
+        .device(device.clone())
         .surface(surface)
         .preferred_surface_format(vk::SurfaceFormatKHR {
             format: vk::FORMAT_B8G8R8A8_SRGB,
@@ -83,6 +86,73 @@ fn main() -> Result<()> {
         })
         .preferred_present_mode(vk::PRESENT_MODE_MAILBOX_KHR)
         .preferred_extent(width as u32, height as u32)
+        .build()?;
+
+    let _image_views = {
+        let create_info = vk::ImageViewCreateInfo::default()
+            .view_type(vk::IMAGE_VIEW_TYPE_2D)
+            .format(swapchain.format())
+            .components(vk::ComponentMapping {
+                r: vk::COMPONENT_SWIZZLE_IDENTITY,
+                g: vk::COMPONENT_SWIZZLE_IDENTITY,
+                b: vk::COMPONENT_SWIZZLE_IDENTITY,
+                a: vk::COMPONENT_SWIZZLE_IDENTITY,
+            })
+            .subresource_range(
+                vk::ImageSubresourceRange::default()
+                    .aspect_mask(vk::IMAGE_ASPECT_COLOR_BIT)
+                    .level_count(1)
+                    .layer_count(1),
+            );
+
+        swapchain
+            .images()
+            .iter()
+            .map(|image| ImageView::new(device.clone(), create_info.image(*image)))
+            .collect::<Result<Vec<ImageView>>>()?
+    };
+
+    let mut color_attachment = 0u32;
+
+    let render_pass = Arc::new(
+        RenderPass::builder()
+            .device(device.clone())
+            .attach(
+                vk::AttachmentDescription::default()
+                    .format(swapchain.format())
+                    .samples(vk::SAMPLE_COUNT_1_BIT)
+                    .load_op(vk::ATTACHMENT_LOAD_OP_LOAD)
+                    .store_op(vk::ATTACHMENT_STORE_OP_STORE)
+                    .stencil_load_op(vk::ATTACHMENT_LOAD_OP_DONT_CARE)
+                    .stencil_store_op(vk::ATTACHMENT_STORE_OP_DONT_CARE)
+                    .initial_layout(vk::IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+                    .final_layout(vk::IMAGE_LAYOUT_PRESENT_SRC_KHR),
+                &mut color_attachment,
+            )
+            .subpass(|b| {
+                b.color_attachment(color_attachment, vk::IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+            })
+            .build()?,
+    );
+
+    let _pipeline = Pipeline::builder()
+        .device(device.clone())
+        .render_pass(render_pass.clone())
+        .compile_shader(
+            vk::SHADER_STAGE_VERTEX_BIT,
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/triangle/basic.vertex.spv"
+            )),
+        )
+        .compile_shader(
+            vk::SHADER_STAGE_FRAGMENT_BIT,
+            include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/triangle/basic.fragment.spv"
+            )),
+        )
+        .dynamic_states(vec![vk::DYNAMIC_STATE_VIEWPORT, vk::DYNAMIC_STATE_SCISSOR])
         .build()?;
 
     'main: loop {

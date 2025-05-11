@@ -1,6 +1,7 @@
 use crate::vk;
 use std::fmt;
 
+#[derive(Clone)]
 pub struct VulkanError(pub vk::Result, pub Option<String>);
 
 impl fmt::Debug for VulkanError {

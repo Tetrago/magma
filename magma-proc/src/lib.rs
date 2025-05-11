@@ -141,7 +141,7 @@ pub fn builder_derive(input: TokenStream) -> TokenStream {
                 .iter()
                 .filter(|attr| attr.path().is_ident("builder"))
                 .filter_map(parse_attr)
-                .any(|(flags, _)| flags.contains("None"))
+                .any(|(flags, _)| flags.contains("skip"))
         })
         .map(|field| make_setter(field.ident.as_ref().unwrap(), &field.ty));
 
@@ -184,14 +184,28 @@ pub fn builder_derive(input: TokenStream) -> TokenStream {
         None
     };
 
-    let output = quote! {
-        impl #impl_generics Default for #name #ty_generics #where_clause {
-            fn default() -> Self {
-                Self {
-                    #(#defaults),*
+    let default_impl = if input
+        .attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("builder"))
+        .filter_map(parse_attr)
+        .all(|(flags, _)| !flags.contains("no_default"))
+    {
+        Some(quote! {
+            impl #impl_generics Default for #name #ty_generics #where_clause {
+                fn default() -> Self {
+                    Self {
+                        #(#defaults),*
+                    }
                 }
             }
-        }
+        })
+    } else {
+        None
+    };
+
+    let output = quote! {
+        #default_impl
 
         impl #impl_generics #name #ty_generics #where_clause {
             #build
