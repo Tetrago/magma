@@ -1,5 +1,6 @@
 mod device;
 mod error;
+mod framebuffer;
 mod image_view;
 mod instance;
 mod physical_device;
@@ -11,6 +12,7 @@ mod swapchain;
 pub use device::Device;
 pub use error::Error;
 pub use error::Result;
+pub use framebuffer::Framebuffer;
 pub use image_view::ImageView;
 pub use instance::Instance;
 pub use physical_device::PhysicalDevice;

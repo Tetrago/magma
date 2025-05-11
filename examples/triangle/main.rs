@@ -1,4 +1,5 @@
 use magma::Device;
+use magma::Framebuffer;
 use magma::ImageView;
 use magma::Instance;
 use magma::PhysicalDevice;
@@ -88,7 +89,7 @@ fn main() -> Result<()> {
         .preferred_extent(width as u32, height as u32)
         .build()?;
 
-    let _image_views = {
+    let image_views = {
         let create_info = vk::ImageViewCreateInfo::default()
             .view_type(vk::IMAGE_VIEW_TYPE_2D)
             .format(swapchain.format())
@@ -154,6 +155,19 @@ fn main() -> Result<()> {
         )
         .dynamic_states(vec![vk::DYNAMIC_STATE_VIEWPORT, vk::DYNAMIC_STATE_SCISSOR])
         .build()?;
+
+    let _framebuffers = image_views
+        .iter()
+        .map(|image_view| {
+            Framebuffer::builder()
+                .device(device.clone())
+                .render_pass(render_pass.clone())
+                .push_attachments(image_view.handle())
+                .width(width as u32)
+                .height(height as u32)
+                .build()
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     'main: loop {
         glfw.poll_events();
