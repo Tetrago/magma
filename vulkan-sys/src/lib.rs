@@ -28,6 +28,16 @@ pub mod vk {
     pub const API_VERSION_1_2: u32 = make_api_version(0, 1, 2, 0);
 
     pub type Enum = u32;
+    pub type EnumFlags = u32;
+}
+
+pub mod internal {
+    mod internal {
+        use super::super::vk::*;
+        include!(concat!(env!("OUT_DIR"), "/internal.rs"));
+    }
+
+    pub use internal::CommandBufferInternal as CommandBuffer;
 }
 
 #[macro_export]

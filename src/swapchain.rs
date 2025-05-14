@@ -1,6 +1,8 @@
 use crate::Device;
 use crate::PhysicalDevice;
 use crate::Result;
+use crate::sync::Fence;
+use crate::sync::Semaphore;
 use std::collections::HashSet;
 use std::ptr::null;
 use std::ptr::null_mut;
@@ -182,6 +184,20 @@ impl Swapchain {
             format: surface_format.format,
             extent,
         })
+    }
+
+    pub fn acquire(&self, semaphore: Option<&Semaphore>, fence: Option<&Fence>) -> Result<u32> {
+        let mut index = 0u32;
+        call!(vk::acquire_next_image_khr(
+            self.device.handle(),
+            self.handle,
+            u64::MAX,
+            semaphore.map(Semaphore::handle).unwrap_or(null_mut()),
+            fence.map(Fence::handle).unwrap_or(null_mut()),
+            &mut index,
+        ))?;
+
+        Ok(index)
     }
 
     pub fn images(&self) -> &[vk::Image] {

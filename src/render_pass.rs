@@ -33,7 +33,9 @@ impl RenderPass {
             .attachment_count(builder.attachments.len() as u32)
             .attachments(builder.attachments.as_ptr())
             .subpass_count(subpasses.len() as u32)
-            .subpasses(subpasses.as_ptr());
+            .subpasses(subpasses.as_ptr())
+            .dependency_count(builder.dependencies.len() as u32)
+            .dependencies(builder.dependencies.as_ptr());
 
         let mut handle: vk::RenderPass = null_mut();
         call!(vk::create_render_pass(
@@ -64,6 +66,7 @@ pub struct Builder {
     attachments: Vec<vk::AttachmentDescription>,
     #[builder(skip)]
     subpasses: Vec<Subpass>,
+    dependencies: Vec<vk::SubpassDependency>,
 }
 
 #[derive(magma_proc::Builder, Clone)]

@@ -1,3 +1,4 @@
+use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote;
 use regex::Regex;
@@ -341,6 +342,89 @@ impl<'a> Visit<'a> for StructureBuilder {
     }
 }
 
+struct CommandCollector {
+    functions: Vec<syn::Signature>,
+}
+
+impl CommandCollector {
+    pub fn new() -> Self {
+        Self {
+            functions: Vec::new(),
+        }
+    }
+
+    fn transform(sig: &syn::Signature) -> syn::ImplItemFn {
+        let base_ident = &sig.ident;
+
+        let name = base_ident.to_string().replace("Cmd", "");
+        let ident = syn::Ident::new(&name, sig.ident.span());
+
+        let args: Vec<_> = sig.inputs.iter().skip(1).collect();
+        let call_idents: Vec<_> = args
+            .iter()
+            .map(|arg| {
+                if let syn::FnArg::Typed(syn::PatType { pat, .. }) = arg {
+                    quote! {#pat}
+                } else {
+                    quote! {}
+                }
+            })
+            .collect();
+
+        syn::parse_quote! {
+            pub unsafe fn #ident(&mut self, #(#args),*) {
+                #base_ident(self.handle, #(#call_idents),*);
+            }
+        }
+    }
+
+    pub fn build(&self) -> Vec<syn::Item> {
+        let structure = syn::parse_quote! {
+            pub struct CommandBufferInternal {
+                handle: VkCommandBuffer
+            }
+        };
+
+        let functions: Vec<_> = self.functions.iter().map(Self::transform).collect();
+
+        let implement = syn::parse_quote! {
+            impl CommandBufferInternal {
+                #(#functions)*
+
+                pub fn handle(&self) -> VkCommandBuffer {
+                    self.handle
+                }
+            }
+        };
+
+        let cast = syn::parse_quote! {
+            impl From<VkCommandBuffer> for CommandBufferInternal {
+                fn from(value: VkCommandBuffer) -> Self {
+                    Self { handle: value }
+                }
+            }
+        };
+
+        vec![structure, implement, cast]
+    }
+}
+
+impl<'a> Visit<'a> for CommandCollector {
+    fn visit_foreign_item_fn(&mut self, node: &'a syn::ForeignItemFn) {
+        if node.sig.ident.to_string().starts_with("vkCmd") {
+            self.functions.push(node.sig.clone());
+        }
+
+        syn::visit::visit_foreign_item_fn(self, node);
+    }
+}
+
+fn finalize(token_stream: TokenStream) -> String {
+    restore_links(&convert_cases(&substitute_names(&save_links(&format(
+        &token_stream.to_string(),
+    )))))
+}
+
 fn main() {
     println!("cargo:rustc-link-lib=vulkan");
 
@@ -358,18 +442,32 @@ fn main() {
     extract_pfn_types(&mut file);
     (Linker).visit_file_mut(&mut file);
 
-    let mut result_mapper = ResultMapper::new();
-    result_mapper.visit_file(&file);
-    file.items.push(syn::Item::Fn(result_mapper.build()));
+    let internal_command_buffer = {
+        let mut commands = CommandCollector::new();
+        commands.visit_file(&file);
+        commands.build()
+    };
 
-    let mut builder = StructureBuilder::new();
-    builder.visit_file(&file);
-    file.items.extend(builder.into_iter());
+    let result_to_string = {
+        let mut result_mapper = ResultMapper::new();
+        result_mapper.visit_file(&file);
+        syn::Item::Fn(result_mapper.build())
+    };
 
-    let bindings = restore_links(&convert_cases(&substitute_names(&save_links(&format(
-        &quote!(#file).to_string(),
-    )))));
+    let structure_impls = {
+        let mut builder = StructureBuilder::new();
+        builder.visit_file(&file);
+        builder.into_iter()
+    };
+
+    file.items.push(result_to_string);
+    file.items.extend(structure_impls);
 
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
-    fs::write(out_path.join("bindings.rs"), &bindings).unwrap();
+    fs::write(out_path.join("bindings.rs"), &finalize(quote!(#file))).unwrap();
+    fs::write(
+        out_path.join("internal.rs"),
+        &finalize(quote!(#(#internal_command_buffer)*)),
+    )
+    .unwrap();
 }

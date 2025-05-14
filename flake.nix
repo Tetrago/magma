@@ -24,29 +24,31 @@
             overlays = [ rust-overlay.overlays.default ];
           };
 
-          rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+          rustToolchain = pkgs.rust-bin.nightly.latest.default.override {
             extensions = [
               "rust-src"
               "rust-analyzer"
+              "rustc-codegen-cranelift-preview"
             ];
           };
         in
         {
-          default = pkgs.mkShell {
+          default = (pkgs.mkShell.override { stdenv = pkgs.clangStdenv; }) {
             packages = with pkgs; [
-              cmake
               xorg.libX11
               xorg.libXrandr
               xorg.libXinerama
               xorg.libXcursor
               xorg.libXi
 
-              rustToolchain
-              rustPlatform.bindgenHook
-
               vulkan-loader
               vulkan-validation-layers
+
               shaderc
+              cmake
+              mold-wrapped
+              rustToolchain
+              rustPlatform.bindgenHook
             ];
           };
         }
