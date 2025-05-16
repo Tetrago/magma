@@ -84,7 +84,7 @@ fn main() -> Result<()> {
 
         let (width, height) = window.get_framebuffer_size();
 
-        let swapchain = Swapchain::builder()
+        let mut swapchain = Swapchain::builder()
             .device(device.clone())
             .surface(surface)
             .preferred_surface_format(vk::SurfaceFormatKHR {
@@ -94,30 +94,6 @@ fn main() -> Result<()> {
             .preferred_present_mode(vk::PRESENT_MODE_MAILBOX_KHR)
             .preferred_extent(width as u32, height as u32)
             .build()?;
-
-        let image_views = {
-            let create_info = vk::ImageViewCreateInfo::default()
-                .view_type(vk::IMAGE_VIEW_TYPE_2D)
-                .format(swapchain.format())
-                .components(vk::ComponentMapping {
-                    r: vk::COMPONENT_SWIZZLE_IDENTITY,
-                    g: vk::COMPONENT_SWIZZLE_IDENTITY,
-                    b: vk::COMPONENT_SWIZZLE_IDENTITY,
-                    a: vk::COMPONENT_SWIZZLE_IDENTITY,
-                })
-                .subresource_range(
-                    vk::ImageSubresourceRange::default()
-                        .aspect_mask(vk::IMAGE_ASPECT_COLOR_BIT)
-                        .level_count(1)
-                        .layer_count(1),
-                );
-
-            swapchain
-                .images()
-                .iter()
-                .map(|image| ImageView::new(device.clone(), create_info.image(*image)))
-                .collect::<Result<Vec<ImageView>>>()?
-        };
 
         let mut color_attachment = 0u32;
 
@@ -171,19 +147,6 @@ fn main() -> Result<()> {
             .dynamic_states(vec![vk::DYNAMIC_STATE_VIEWPORT, vk::DYNAMIC_STATE_SCISSOR])
             .build()?;
 
-        let framebuffers = image_views
-            .iter()
-            .map(|image_view| {
-                Framebuffer::builder()
-                    .device(device.clone())
-                    .render_pass(render_pass.clone())
-                    .push_attachments(image_view.handle())
-                    .width(width as u32)
-                    .height(height as u32)
-                    .build()
-            })
-            .collect::<Result<Vec<_>>>()?;
-
         let command_pool = CommandPool::builder()
             .device(device.clone())
             .queue_family_index(queue_family)
@@ -210,6 +173,64 @@ fn main() -> Result<()> {
             .map(|_| Fence::new_signaled(device.clone()))
             .collect::<Result<Vec<_>>>()?;
 
+        let mut image_views = Vec::<ImageView>::new();
+        let mut framebuffers = Vec::<Framebuffer>::new();
+
+        fn rebuild_framebuffers(
+            device: &Arc<Device>,
+            render_pass: &Arc<RenderPass>,
+            swapchain: &mut Swapchain,
+            image_views: &mut Vec<ImageView>,
+            framebuffers: &mut Vec<Framebuffer>,
+            (width, height): (i32, i32),
+        ) -> Result<()> {
+            let create_info = vk::ImageViewCreateInfo::default()
+                .view_type(vk::IMAGE_VIEW_TYPE_2D)
+                .format(swapchain.format())
+                .components(vk::ComponentMapping {
+                    r: vk::COMPONENT_SWIZZLE_IDENTITY,
+                    g: vk::COMPONENT_SWIZZLE_IDENTITY,
+                    b: vk::COMPONENT_SWIZZLE_IDENTITY,
+                    a: vk::COMPONENT_SWIZZLE_IDENTITY,
+                })
+                .subresource_range(
+                    vk::ImageSubresourceRange::default()
+                        .aspect_mask(vk::IMAGE_ASPECT_COLOR_BIT)
+                        .level_count(1)
+                        .layer_count(1),
+                );
+
+            *image_views = swapchain
+                .images()
+                .iter()
+                .map(|image| ImageView::new(device.clone(), create_info.image(*image)))
+                .collect::<Result<Vec<ImageView>>>()?;
+
+            *framebuffers = image_views
+                .iter()
+                .map(|image_view| {
+                    Framebuffer::builder()
+                        .device(device.clone())
+                        .render_pass(render_pass.clone())
+                        .push_attachments(image_view.handle())
+                        .width(width as u32)
+                        .height(height as u32)
+                        .build()
+                })
+                .collect::<Result<Vec<_>>>()?;
+
+            Ok(())
+        }
+
+        rebuild_framebuffers(
+            &device,
+            &render_pass,
+            &mut swapchain,
+            &mut image_views,
+            &mut framebuffers,
+            window.get_framebuffer_size(),
+        )?;
+
         let mut current_frame = 0usize;
 
         while !window.should_close() {
@@ -221,10 +242,32 @@ fn main() -> Result<()> {
             }
 
             in_flight_fences[current_frame].wait().unwrap();
-            in_flight_fences[current_frame].reset().unwrap();
 
-            let image =
-                swapchain.acquire(Some(&image_available_semaphores[current_frame]), None)?;
+            let image = match swapchain
+                .acquire(Some(&image_available_semaphores[current_frame]), None)
+            {
+                Ok(index) => index,
+                Err(magma::Error::Vulkan(error))
+                    if error.0 == vk::ERROR_OUT_OF_DATE_KHR || error.0 == vk::SUBOPTIMAL_KHR =>
+                {
+                    let (width, height) = window.get_framebuffer_size();
+
+                    swapchain.recreate(width as u32, height as u32)?;
+                    rebuild_framebuffers(
+                        &device,
+                        &render_pass,
+                        &mut swapchain,
+                        &mut image_views,
+                        &mut framebuffers,
+                        (width, height),
+                    )?;
+
+                    continue;
+                }
+                _ => panic!("Unknown swapchain error"),
+            };
+
+            in_flight_fences[current_frame].reset().unwrap();
 
             let cmd = &mut command_buffers[current_frame];
             cmd.reset()?;
