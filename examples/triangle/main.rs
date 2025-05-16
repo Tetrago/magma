@@ -1,3 +1,4 @@
+use magma::CommandBuffer;
 use magma::CommandPool;
 use magma::Device;
 use magma::Framebuffer;
@@ -120,14 +121,6 @@ fn main() -> Result<()> {
 
         let mut color_attachment = 0u32;
 
-        let dependency = vk::SubpassDependency::default()
-            .src_subpass(vk::SUBPASS_EXTERNAL as u32)
-            .dst_subpass(0)
-            .src_stage_mask(vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
-            .src_access_mask(0)
-            .dst_stage_mask(vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
-            .dst_access_mask(vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
-
         let render_pass = Arc::new(
             RenderPass::builder()
                 .device(device.clone())
@@ -146,7 +139,15 @@ fn main() -> Result<()> {
                 .subpass(|b| {
                     b.color_attachment(color_attachment, vk::IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
                 })
-                .push_dependencies(dependency)
+                .push_dependencies(
+                    vk::SubpassDependency::default()
+                        .src_subpass(vk::SUBPASS_EXTERNAL as u32)
+                        .dst_subpass(0)
+                        .src_stage_mask(vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
+                        .src_access_mask(0)
+                        .dst_stage_mask(vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
+                        .dst_access_mask(vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT),
+                )
                 .build()?,
         );
 
@@ -183,17 +184,33 @@ fn main() -> Result<()> {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let mut command_pool = CommandPool::builder()
+        let command_pool = CommandPool::builder()
             .device(device.clone())
             .queue_family_index(queue_family)
             .reset()
             .build()?;
 
-        let mut cmd = command_pool.get_buffer()?;
+        const IMAGES_IN_FLIGHT: usize = 2;
 
-        let image_available_semaphore = Semaphore::new(device.clone())?;
-        let render_finished_semaphore = Semaphore::new(device.clone())?;
-        let mut in_flight_fence = Fence::new_signaled(device.clone())?;
+        let mut command_buffers = Vec::<CommandBuffer>::with_capacity(IMAGES_IN_FLIGHT);
+
+        for _ in 0..IMAGES_IN_FLIGHT {
+            command_buffers.push(command_pool.get_buffer()?);
+        }
+
+        let image_available_semaphores = (0..IMAGES_IN_FLIGHT)
+            .map(|_| Semaphore::new(device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+
+        let render_finished_semaphores = (0..IMAGES_IN_FLIGHT)
+            .map(|_| Semaphore::new(device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+
+        let mut in_flight_fences = (0..IMAGES_IN_FLIGHT)
+            .map(|_| Fence::new_signaled(device.clone()))
+            .collect::<Result<Vec<_>>>()?;
+
+        let mut current_frame = 0usize;
 
         while !window.should_close() {
             glfw.poll_events();
@@ -203,11 +220,13 @@ fn main() -> Result<()> {
                 }
             }
 
-            in_flight_fence.wait().unwrap();
-            in_flight_fence.reset().unwrap();
+            in_flight_fences[current_frame].wait().unwrap();
+            in_flight_fences[current_frame].reset().unwrap();
 
-            let image = swapchain.acquire(Some(&image_available_semaphore), None)?;
+            let image =
+                swapchain.acquire(Some(&image_available_semaphores[current_frame]), None)?;
 
+            let cmd = &mut command_buffers[current_frame];
             cmd.reset()?;
             cmd.begin_once()?;
 
@@ -248,29 +267,31 @@ fn main() -> Result<()> {
 
             let submit_info = vk::SubmitInfo::default()
                 .wait_semaphore_count(1)
-                .wait_semaphores(&image_available_semaphore.handle())
+                .wait_semaphores(&image_available_semaphores[current_frame].handle())
                 .wait_dst_stage_mask(&vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
                 .command_buffer_count(1)
                 .command_buffers(&cmd.handle())
                 .signal_semaphore_count(1)
-                .signal_semaphores(&render_finished_semaphore.handle());
+                .signal_semaphores(&render_finished_semaphores[current_frame].handle());
 
             call!(vk::queue_submit(
                 queue,
                 1,
                 &submit_info,
-                in_flight_fence.handle()
+                in_flight_fences[current_frame].handle()
             ))
             .unwrap();
 
             let present_info = vk::PresentInfoKHR::default()
                 .wait_semaphore_count(1)
-                .wait_semaphores(&render_finished_semaphore.handle())
+                .wait_semaphores(&render_finished_semaphores[current_frame].handle())
                 .swapchain_count(1)
                 .swapchains(&swapchain.handle())
                 .image_indices(&image);
 
             call!(vk::queue_present_khr(queue, &present_info)).unwrap();
+
+            current_frame = (current_frame + 1) % IMAGES_IN_FLIGHT;
         }
 
         call!(vk::device_wait_idle(device.handle())).unwrap()

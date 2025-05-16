@@ -44,7 +44,7 @@ impl CommandPool {
         })
     }
 
-    pub fn get_buffer(&mut self) -> Result<CommandBuffer<'_>> {
+    pub fn get_buffer(&self) -> Result<CommandBuffer<'_>> {
         if let Some(handle) = self.buffers.lock().unwrap().pop_front() {
             return Ok(CommandBuffer::new(&self.buffers, handle));
         }
