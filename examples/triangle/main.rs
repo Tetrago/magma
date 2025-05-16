@@ -308,14 +308,18 @@ fn main() -> Result<()> {
 
             cmd.end()?;
 
+            let image_available_semaphore = image_available_semaphores[current_frame].handle();
+            let render_finished_semaphore = render_finished_semaphores[current_frame].handle();
+            let cmd_handle = cmd.handle();
+
             let submit_info = vk::SubmitInfo::default()
                 .wait_semaphore_count(1)
-                .wait_semaphores(&image_available_semaphores[current_frame].handle())
+                .wait_semaphores(&image_available_semaphore)
                 .wait_dst_stage_mask(&vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
                 .command_buffer_count(1)
-                .command_buffers(&cmd.handle())
+                .command_buffers(&cmd_handle)
                 .signal_semaphore_count(1)
-                .signal_semaphores(&render_finished_semaphores[current_frame].handle());
+                .signal_semaphores(&render_finished_semaphore);
 
             call!(vk::queue_submit(
                 queue,
@@ -325,11 +329,13 @@ fn main() -> Result<()> {
             ))
             .unwrap();
 
+            let swapchain_handle = swapchain.handle();
+
             let present_info = vk::PresentInfoKHR::default()
                 .wait_semaphore_count(1)
-                .wait_semaphores(&render_finished_semaphores[current_frame].handle())
+                .wait_semaphores(&render_finished_semaphore)
                 .swapchain_count(1)
-                .swapchains(&swapchain.handle())
+                .swapchains(&swapchain_handle)
                 .image_indices(&image);
 
             call!(vk::queue_present_khr(queue, &present_info)).unwrap();

@@ -44,6 +44,7 @@
               vulkan-loader
               vulkan-validation-layers
 
+              gdb
               shaderc
               cmake
               mold-wrapped
