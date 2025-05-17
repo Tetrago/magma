@@ -15,13 +15,15 @@ use magma::sync::Fence;
 use magma::sync::Semaphore;
 use magma::to_string;
 use magma::vk;
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 fn main() -> Result<()> {
     let mut glfw = glfw::init(glfw::fail_on_errors).unwrap();
     glfw.window_hint(glfw::WindowHint::ClientApi(glfw::ClientApiHint::NoApi));
 
-    let (window, events) = glfw
+    let (mut window, events) = glfw
         .create_window(1280, 720, "Magma", glfw::WindowMode::Windowed)
         .unwrap();
 
@@ -161,9 +163,7 @@ fn main() -> Result<()> {
             command_buffers.push(command_pool.get_buffer()?);
         }
 
-        let image_available_semaphores = (0..IMAGES_IN_FLIGHT)
-            .map(|_| Semaphore::new(device.clone()))
-            .collect::<Result<Vec<_>>>()?;
+        let mut image_available_semaphores = Vec::<Semaphore>::new();
 
         let render_finished_semaphores = (0..IMAGES_IN_FLIGHT)
             .map(|_| Semaphore::new(device.clone()))
@@ -176,14 +176,20 @@ fn main() -> Result<()> {
         let mut image_views = Vec::<ImageView>::new();
         let mut framebuffers = Vec::<Framebuffer>::new();
 
-        fn rebuild_framebuffers(
+        fn rebuild(
             device: &Arc<Device>,
             render_pass: &Arc<RenderPass>,
             swapchain: &mut Swapchain,
             image_views: &mut Vec<ImageView>,
             framebuffers: &mut Vec<Framebuffer>,
-            (width, height): (i32, i32),
+            image_semaphores: &mut Vec<Semaphore>,
         ) -> Result<()> {
+            let extent = swapchain.extent();
+
+            *image_semaphores = (0..IMAGES_IN_FLIGHT)
+                .map(|_| Semaphore::new(device.clone()))
+                .collect::<Result<Vec<_>>>()?;
+
             let create_info = vk::ImageViewCreateInfo::default()
                 .view_type(vk::IMAGE_VIEW_TYPE_2D)
                 .format(swapchain.format())
@@ -213,8 +219,8 @@ fn main() -> Result<()> {
                         .device(device.clone())
                         .render_pass(render_pass.clone())
                         .push_attachments(image_view.handle())
-                        .width(width as u32)
-                        .height(height as u32)
+                        .width(extent.width)
+                        .height(extent.height)
                         .build()
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -222,16 +228,25 @@ fn main() -> Result<()> {
             Ok(())
         }
 
-        rebuild_framebuffers(
+        rebuild(
             &device,
             &render_pass,
             &mut swapchain,
             &mut image_views,
             &mut framebuffers,
-            window.get_framebuffer_size(),
+            &mut image_available_semaphores,
         )?;
 
         let mut current_frame = 0usize;
+        let rebuild_requested = Rc::new(Cell::new(false));
+
+        window.set_framebuffer_size_callback({
+            let rebuild_requested = rebuild_requested.clone();
+
+            move |_, _, _| {
+                rebuild_requested.set(true);
+            }
+        });
 
         while !window.should_close() {
             glfw.poll_events();
@@ -243,29 +258,43 @@ fn main() -> Result<()> {
 
             in_flight_fences[current_frame].wait().unwrap();
 
-            let image = match swapchain
-                .acquire(Some(&image_available_semaphores[current_frame]), None)
-            {
-                Ok(index) => index,
-                Err(magma::Error::Vulkan(error))
-                    if error.0 == vk::ERROR_OUT_OF_DATE_KHR || error.0 == vk::SUBOPTIMAL_KHR =>
-                {
-                    let (width, height) = window.get_framebuffer_size();
-
-                    swapchain.recreate(width as u32, height as u32)?;
-                    rebuild_framebuffers(
-                        &device,
-                        &render_pass,
-                        &mut swapchain,
-                        &mut image_views,
-                        &mut framebuffers,
-                        (width, height),
-                    )?;
-
-                    continue;
+            let image = if rebuild_requested.get() {
+                0
+            } else {
+                match swapchain.acquire(Some(&image_available_semaphores[current_frame]), None) {
+                    Ok(index) => index,
+                    Err(magma::Error::Vulkan(error))
+                        if error.0 == vk::ERROR_OUT_OF_DATE_KHR
+                            || error.0 == vk::SUBOPTIMAL_KHR =>
+                    {
+                        rebuild_requested.set(true);
+                        0
+                    }
+                    _ => panic!("Unknown swapchain error"),
                 }
-                _ => panic!("Unknown swapchain error"),
             };
+
+            if rebuild_requested.replace(false) {
+                let mut size = window.get_framebuffer_size();
+                while size.0 == 0 || size.1 == 0 {
+                    size = window.get_framebuffer_size();
+                }
+
+                swapchain.recreate(size.0 as u32, size.1 as u32)?;
+                framebuffers.clear();
+                image_views.clear();
+
+                rebuild(
+                    &device,
+                    &render_pass,
+                    &mut swapchain,
+                    &mut image_views,
+                    &mut framebuffers,
+                    &mut image_available_semaphores,
+                )?;
+
+                continue;
+            }
 
             in_flight_fences[current_frame].reset().unwrap();
 
@@ -338,7 +367,7 @@ fn main() -> Result<()> {
                 .swapchains(&swapchain_handle)
                 .image_indices(&image);
 
-            call!(vk::queue_present_khr(queue, &present_info)).unwrap();
+            let _ = call!(vk::queue_present_khr(queue, &present_info));
 
             current_frame = (current_frame + 1) % IMAGES_IN_FLIGHT;
         }

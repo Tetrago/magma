@@ -189,25 +189,22 @@ impl Swapchain {
             null_mut()
         ))?;
 
-        let mut images = vec![null_mut(); count as usize];
+        self.images.resize(count as usize, null_mut());
         call!(vk::get_swapchain_images_khr(
             self.device.handle(),
             handle,
             &mut count,
-            images.as_mut_ptr()
+            self.images.as_mut_ptr()
         ))?;
 
         if !self.handle.is_null() {
             unsafe {
                 let _ = vk::device_wait_idle(self.device.handle());
-                self.images.clear();
                 vk::destroy_swapchain_khr(self.device.handle(), self.handle, null());
             }
         }
 
         self.handle = handle;
-        self.images = images;
-
         Ok(())
     }
 
