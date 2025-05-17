@@ -1,8 +1,6 @@
-use magma::CommandBuffer;
 use magma::CommandPool;
 use magma::Device;
-use magma::Framebuffer;
-use magma::ImageView;
+use magma::Display;
 use magma::Instance;
 use magma::PhysicalDevice;
 use magma::Pipeline;
@@ -11,6 +9,7 @@ use magma::Result;
 use magma::Swapchain;
 use magma::call;
 use magma::predicate;
+use magma::prelude::*;
 use magma::sync::Fence;
 use magma::sync::Semaphore;
 use magma::to_string;
@@ -73,61 +72,71 @@ fn main() -> Result<()> {
                 .0 as u32
         };
 
-        let mut queue: Option<vk::Queue> = None;
-        let device = Arc::new(
-            Device::builder()
-                .physical_device(physical_device)
-                .order_queue(queue_family, &mut queue)
-                .extend_extensions(device_extensions)
-                .build()?,
-        );
+        let (device, queue) = {
+            let mut queue: Option<vk::Queue> = None;
 
-        let queue = queue.unwrap();
+            let device = Arc::new(
+                Device::builder()
+                    .physical_device(physical_device)
+                    .order_queue(queue_family, &mut queue)
+                    .extend_extensions(device_extensions)
+                    .build()?,
+            );
 
-        let (width, height) = window.get_framebuffer_size();
+            (device, queue.unwrap())
+        };
 
-        let mut swapchain = Swapchain::builder()
-            .device(device.clone())
-            .surface(surface)
-            .preferred_surface_format(vk::SurfaceFormatKHR {
-                format: vk::FORMAT_B8G8R8A8_SRGB,
-                color_space: vk::COLOR_SPACE_SRGB_NONLINEAR_KHR,
-            })
-            .preferred_present_mode(vk::PRESENT_MODE_MAILBOX_KHR)
-            .preferred_extent(width as u32, height as u32)
-            .build()?;
+        let swapchain = {
+            let (width, height) = window.get_framebuffer_size();
 
-        let mut color_attachment = 0u32;
-
-        let render_pass = Arc::new(
-            RenderPass::builder()
+            Swapchain::builder()
                 .device(device.clone())
-                .attach(
-                    vk::AttachmentDescription::default()
-                        .format(swapchain.format())
-                        .samples(vk::SAMPLE_COUNT_1_BIT)
-                        .load_op(vk::ATTACHMENT_LOAD_OP_CLEAR)
-                        .store_op(vk::ATTACHMENT_STORE_OP_STORE)
-                        .stencil_load_op(vk::ATTACHMENT_LOAD_OP_DONT_CARE)
-                        .stencil_store_op(vk::ATTACHMENT_STORE_OP_DONT_CARE)
-                        .initial_layout(vk::IMAGE_LAYOUT_UNDEFINED)
-                        .final_layout(vk::IMAGE_LAYOUT_PRESENT_SRC_KHR),
-                    &mut color_attachment,
-                )
-                .subpass(|b| {
-                    b.color_attachment(color_attachment, vk::IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+                .surface(surface)
+                .preferred_surface_format(vk::SurfaceFormatKHR {
+                    format: vk::FORMAT_B8G8R8A8_SRGB,
+                    color_space: vk::COLOR_SPACE_SRGB_NONLINEAR_KHR,
                 })
-                .push_dependencies(
-                    vk::SubpassDependency::default()
-                        .src_subpass(vk::SUBPASS_EXTERNAL as u32)
-                        .dst_subpass(0)
-                        .src_stage_mask(vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
-                        .src_access_mask(0)
-                        .dst_stage_mask(vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
-                        .dst_access_mask(vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT),
-                )
-                .build()?,
-        );
+                .preferred_present_mode(vk::PRESENT_MODE_MAILBOX_KHR)
+                .preferred_extent(width as u32, height as u32)
+                .build()?
+        };
+
+        let render_pass = {
+            let mut color_attachment = 0u32;
+
+            Arc::new(
+                RenderPass::builder()
+                    .device(device.clone())
+                    .attach(
+                        vk::AttachmentDescription::default()
+                            .format(swapchain.format())
+                            .samples(vk::SAMPLE_COUNT_1_BIT)
+                            .load_op(vk::ATTACHMENT_LOAD_OP_CLEAR)
+                            .store_op(vk::ATTACHMENT_STORE_OP_STORE)
+                            .stencil_load_op(vk::ATTACHMENT_LOAD_OP_DONT_CARE)
+                            .stencil_store_op(vk::ATTACHMENT_STORE_OP_DONT_CARE)
+                            .initial_layout(vk::IMAGE_LAYOUT_UNDEFINED)
+                            .final_layout(vk::IMAGE_LAYOUT_PRESENT_SRC_KHR),
+                        &mut color_attachment,
+                    )
+                    .subpass(|b| {
+                        b.color_attachment(
+                            color_attachment,
+                            vk::IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                        )
+                    })
+                    .push_dependencies(
+                        vk::SubpassDependency::default()
+                            .src_subpass(vk::SUBPASS_EXTERNAL as u32)
+                            .dst_subpass(0)
+                            .src_stage_mask(vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
+                            .src_access_mask(0)
+                            .dst_stage_mask(vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
+                            .dst_access_mask(vk::ACCESS_COLOR_ATTACHMENT_WRITE_BIT),
+                    )
+                    .build()?,
+            )
+        };
 
         let pipeline = Pipeline::builder()
             .device(device.clone())
@@ -157,13 +166,13 @@ fn main() -> Result<()> {
 
         const IMAGES_IN_FLIGHT: usize = 2;
 
-        let mut command_buffers = Vec::<CommandBuffer>::with_capacity(IMAGES_IN_FLIGHT);
+        let mut command_buffers = (0..IMAGES_IN_FLIGHT)
+            .map(|_| command_pool.get_buffer())
+            .collect::<Result<Vec<_>>>()?;
 
-        for _ in 0..IMAGES_IN_FLIGHT {
-            command_buffers.push(command_pool.get_buffer()?);
-        }
-
-        let mut image_available_semaphores = Vec::<Semaphore>::new();
+        let mut image_available_semaphores = (0..IMAGES_IN_FLIGHT)
+            .map(|_| Semaphore::new(device.clone()))
+            .collect::<Result<Vec<_>>>()?;
 
         let render_finished_semaphores = (0..IMAGES_IN_FLIGHT)
             .map(|_| Semaphore::new(device.clone()))
@@ -173,69 +182,10 @@ fn main() -> Result<()> {
             .map(|_| Fence::new_signaled(device.clone()))
             .collect::<Result<Vec<_>>>()?;
 
-        let mut image_views = Vec::<ImageView>::new();
-        let mut framebuffers = Vec::<Framebuffer>::new();
-
-        fn rebuild(
-            device: &Arc<Device>,
-            render_pass: &Arc<RenderPass>,
-            swapchain: &mut Swapchain,
-            image_views: &mut Vec<ImageView>,
-            framebuffers: &mut Vec<Framebuffer>,
-            image_semaphores: &mut Vec<Semaphore>,
-        ) -> Result<()> {
-            let extent = swapchain.extent();
-
-            *image_semaphores = (0..IMAGES_IN_FLIGHT)
-                .map(|_| Semaphore::new(device.clone()))
-                .collect::<Result<Vec<_>>>()?;
-
-            let create_info = vk::ImageViewCreateInfo::default()
-                .view_type(vk::IMAGE_VIEW_TYPE_2D)
-                .format(swapchain.format())
-                .components(vk::ComponentMapping {
-                    r: vk::COMPONENT_SWIZZLE_IDENTITY,
-                    g: vk::COMPONENT_SWIZZLE_IDENTITY,
-                    b: vk::COMPONENT_SWIZZLE_IDENTITY,
-                    a: vk::COMPONENT_SWIZZLE_IDENTITY,
-                })
-                .subresource_range(
-                    vk::ImageSubresourceRange::default()
-                        .aspect_mask(vk::IMAGE_ASPECT_COLOR_BIT)
-                        .level_count(1)
-                        .layer_count(1),
-                );
-
-            *image_views = swapchain
-                .images()
-                .iter()
-                .map(|image| ImageView::new(device.clone(), create_info.image(*image)))
-                .collect::<Result<Vec<ImageView>>>()?;
-
-            *framebuffers = image_views
-                .iter()
-                .map(|image_view| {
-                    Framebuffer::builder()
-                        .device(device.clone())
-                        .render_pass(render_pass.clone())
-                        .push_attachments(image_view.handle())
-                        .width(extent.width)
-                        .height(extent.height)
-                        .build()
-                })
-                .collect::<Result<Vec<_>>>()?;
-
-            Ok(())
-        }
-
-        rebuild(
-            &device,
-            &render_pass,
-            &mut swapchain,
-            &mut image_views,
-            &mut framebuffers,
-            &mut image_available_semaphores,
-        )?;
+        let mut display = Display::builder()
+            .swapchain(swapchain)
+            .render_pass(render_pass.clone())
+            .build()?;
 
         let mut current_frame = 0usize;
         let rebuild_requested = Rc::new(Cell::new(false));
@@ -258,20 +208,18 @@ fn main() -> Result<()> {
 
             in_flight_fences[current_frame].wait().unwrap();
 
-            let image = if rebuild_requested.get() {
-                0
-            } else {
-                match swapchain.acquire(Some(&image_available_semaphores[current_frame]), None) {
-                    Ok(index) => index,
-                    Err(magma::Error::Vulkan(error))
-                        if error.0 == vk::ERROR_OUT_OF_DATE_KHR
-                            || error.0 == vk::SUBOPTIMAL_KHR =>
-                    {
-                        rebuild_requested.set(true);
-                        0
-                    }
-                    _ => panic!("Unknown swapchain error"),
+            let image = match display
+                .swapchain()
+                .acquire(Some(&image_available_semaphores[current_frame]), None)
+            {
+                Ok(index) => index,
+                Err(magma::Error::Vulkan(error))
+                    if error.0 == vk::ERROR_OUT_OF_DATE_KHR || error.0 == vk::SUBOPTIMAL_KHR =>
+                {
+                    rebuild_requested.set(true);
+                    0
                 }
+                _ => panic!("Unknown swapchain error"),
             };
 
             if rebuild_requested.replace(false) {
@@ -280,18 +228,12 @@ fn main() -> Result<()> {
                     size = window.get_framebuffer_size();
                 }
 
-                swapchain.recreate(size.0 as u32, size.1 as u32)?;
-                framebuffers.clear();
-                image_views.clear();
+                queue.wait()?;
+                display.recreate(size.0 as u32, size.1 as u32)?;
 
-                rebuild(
-                    &device,
-                    &render_pass,
-                    &mut swapchain,
-                    &mut image_views,
-                    &mut framebuffers,
-                    &mut image_available_semaphores,
-                )?;
+                image_available_semaphores = (0..IMAGES_IN_FLIGHT)
+                    .map(|_| Semaphore::new(device.clone()))
+                    .collect::<Result<Vec<_>>>()?;
 
                 continue;
             }
@@ -311,8 +253,8 @@ fn main() -> Result<()> {
 
                 let render_pass = vk::RenderPassBeginInfo::default()
                     .render_pass(render_pass.handle())
-                    .framebuffer(framebuffers[image as usize].handle())
-                    .render_area(vk::Rect2D::default().extent(swapchain.extent()))
+                    .framebuffer(display.framebuffers()[image as usize].handle())
+                    .render_area(vk::Rect2D::default().extent(display.swapchain().extent()))
                     .clear_value_count(1)
                     .clear_values(&clear_value);
 
@@ -322,13 +264,13 @@ fn main() -> Result<()> {
                 let viewport = vk::Viewport::default()
                     .x(0.0)
                     .y(0.0)
-                    .width(swapchain.extent().width as f32)
-                    .height(swapchain.extent().height as f32)
+                    .width(display.swapchain().extent().width as f32)
+                    .height(display.swapchain().extent().height as f32)
                     .min_depth(0.0)
                     .max_depth(1.0);
                 cmd.set_viewport(0, 1, &viewport);
 
-                let scissor = vk::Rect2D::default().extent(swapchain.extent());
+                let scissor = vk::Rect2D::default().extent(display.swapchain().extent());
                 cmd.set_scissor(0, 1, &scissor);
 
                 cmd.draw(3, 1, 0, 0);
@@ -339,35 +281,23 @@ fn main() -> Result<()> {
 
             let image_available_semaphore = image_available_semaphores[current_frame].handle();
             let render_finished_semaphore = render_finished_semaphores[current_frame].handle();
-            let cmd_handle = cmd.handle();
 
             let submit_info = vk::SubmitInfo::default()
                 .wait_semaphore_count(1)
                 .wait_semaphores(&image_available_semaphore)
                 .wait_dst_stage_mask(&vk::PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
-                .command_buffer_count(1)
-                .command_buffers(&cmd_handle)
                 .signal_semaphore_count(1)
                 .signal_semaphores(&render_finished_semaphore);
 
-            call!(vk::queue_submit(
+            queue.submit(submit_info, cmd, Some(&in_flight_fences[current_frame]))?;
+
+            let _ = display.swapchain().present(
                 queue,
-                1,
-                &submit_info,
-                in_flight_fences[current_frame].handle()
-            ))
-            .unwrap();
-
-            let swapchain_handle = swapchain.handle();
-
-            let present_info = vk::PresentInfoKHR::default()
-                .wait_semaphore_count(1)
-                .wait_semaphores(&render_finished_semaphore)
-                .swapchain_count(1)
-                .swapchains(&swapchain_handle)
-                .image_indices(&image);
-
-            let _ = call!(vk::queue_present_khr(queue, &present_info));
+                vk::PresentInfoKHR::default()
+                    .wait_semaphore_count(1)
+                    .wait_semaphores(&render_finished_semaphore)
+                    .image_indices(&image),
+            );
 
             current_frame = (current_frame + 1) % IMAGES_IN_FLIGHT;
         }

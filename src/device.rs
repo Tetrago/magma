@@ -87,6 +87,11 @@ impl Device {
         })
     }
 
+    pub fn wait(&self) -> Result<()> {
+        call!(vk::device_wait_idle(self.handle))?;
+        Ok(())
+    }
+
     pub fn physical_device(&self) -> &PhysicalDevice {
         &self.physical_device
     }

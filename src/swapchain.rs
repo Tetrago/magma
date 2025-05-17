@@ -22,7 +22,7 @@ pub struct SwapchainDetails {
 pub struct Swapchain {
     #[object]
     handle: vk::SwapchainKHR,
-    device: Arc<Device>,
+    pub(crate) device: Arc<Device>,
     images: Vec<vk::Image>,
     surface: vk::SurfaceKHR,
     surface_format: vk::SurfaceFormatKHR,
@@ -199,7 +199,6 @@ impl Swapchain {
 
         if !self.handle.is_null() {
             unsafe {
-                let _ = vk::device_wait_idle(self.device.handle());
                 vk::destroy_swapchain_khr(self.device.handle(), self.handle, null());
             }
         }
@@ -220,6 +219,12 @@ impl Swapchain {
         ))?;
 
         Ok(index)
+    }
+
+    pub fn present(&self, queue: vk::Queue, present_info: vk::PresentInfoKHR) -> Result<()> {
+        let present_info = present_info.swapchain_count(1).swapchains(&self.handle);
+        call!(vk::queue_present_khr(queue, &present_info))?;
+        Ok(())
     }
 
     pub fn images(&self) -> &[vk::Image] {
