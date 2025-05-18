@@ -30,7 +30,11 @@ impl Pipeline {
             .dynamic_state_count(builder.dynamic_states.len() as u32)
             .dynamic_states(builder.dynamic_states.as_ptr());
 
-        let vertex_input = vk::PipelineVertexInputStateCreateInfo::default();
+        let vertex_input = vk::PipelineVertexInputStateCreateInfo::default()
+            .vertex_binding_description_count(builder.bindings.len() as u32)
+            .vertex_binding_descriptions(builder.bindings.as_ptr())
+            .vertex_attribute_description_count(builder.attributes.len() as u32)
+            .vertex_attribute_descriptions(builder.attributes.as_ptr());
 
         let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
             .topology(builder.topology)
@@ -192,6 +196,10 @@ pub struct Builder {
     front_face: vk::Enum,
     #[builder(default = 0)]
     subpass: u32,
+    #[builder(skip)]
+    bindings: Vec<vk::VertexInputBindingDescription>,
+    #[builder(skip)]
+    attributes: Vec<vk::VertexInputAttributeDescription>,
 }
 
 impl Builder {
@@ -206,6 +214,46 @@ impl Builder {
                 code,
             ),
         ));
+
+        self
+    }
+
+    pub fn binding(mut self, binding: u32, stride: usize) -> Self {
+        self.bindings.push(
+            vk::VertexInputBindingDescription::default()
+                .binding(binding)
+                .stride(stride as u32)
+                .input_rate(vk::VERTEX_INPUT_RATE_VERTEX),
+        );
+
+        self
+    }
+
+    pub fn instance_binding(mut self, binding: u32, stride: usize) -> Self {
+        self.bindings.push(
+            vk::VertexInputBindingDescription::default()
+                .binding(binding)
+                .stride(stride as u32)
+                .input_rate(vk::VERTEX_INPUT_RATE_INSTANCE),
+        );
+
+        self
+    }
+
+    pub fn attribute(
+        mut self,
+        binding: u32,
+        location: u32,
+        format: vk::Format,
+        offset: usize,
+    ) -> Self {
+        self.attributes.push(
+            vk::VertexInputAttributeDescription::default()
+                .binding(binding)
+                .location(location)
+                .format(format)
+                .offset(offset as u32),
+        );
 
         self
     }

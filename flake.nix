@@ -24,11 +24,10 @@
             overlays = [ rust-overlay.overlays.default ];
           };
 
-          rustToolchain = pkgs.rust-bin.nightly.latest.default.override {
+          rustToolchain = pkgs.rust-bin.stable.latest.default.override {
             extensions = [
               "rust-src"
               "rust-analyzer"
-              "rustc-codegen-cranelift-preview"
             ];
           };
         in

@@ -61,8 +61,6 @@ fn build_shaders() {
 }
 
 fn main() {
-    if cfg!(feature = "example_shaders") {
-        #[cfg(feature = "example_shaders")]
-        build_shaders();
-    }
+    #[cfg(feature = "example_shaders")]
+    build_shaders();
 }

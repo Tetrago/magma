@@ -9,10 +9,10 @@ use vulkan_sys::vk;
 #[derive(magma_proc::Object)]
 #[object(builder = Builder)]
 pub struct Display {
+    framebuffers: Vec<Framebuffer>,
+    image_views: Vec<ImageView>,
     swapchain: Swapchain,
     render_pass: Arc<RenderPass>,
-    image_views: Vec<ImageView>,
-    framebuffers: Vec<Framebuffer>,
 }
 
 impl Display {

@@ -143,7 +143,7 @@ impl Instance {
 
         #[cfg(debug_assertions)]
         {
-            if let Some(func) = obj.get_proc_address::<vk::pfn::create_debug_utils_messenger_ext>(
+            if let Some(func) = obj.get_proc_address::<vk::PFN_vkCreateDebugUtilsMessengerEXT>(
                 "vkCreateDebugUtilsMessengerEXT",
             ) {
                 call!(func(
@@ -216,7 +216,7 @@ impl Instance {
     pub fn get_proc_address<T>(&self, name: &str) -> T {
         use std::mem;
 
-        assert!(mem::size_of::<T>() == mem::size_of::<vk::pfn::void_function>());
+        assert!(mem::size_of::<T>() == mem::size_of::<vk::PFN_vkVoidFunction>());
 
         unsafe {
             let result =
@@ -232,7 +232,7 @@ impl Drop for Instance {
             #[cfg(debug_assertions)]
             if !self.debug_messenger.is_null() {
                 let func = self
-                    .get_proc_address::<vk::pfn::destroy_debug_utils_messenger_ext>(
+                    .get_proc_address::<vk::PFN_vkDestroyDebugUtilsMessengerEXT>(
                         "vkDestroyDebugUtilsMessengerEXT",
                     )
                     .unwrap();
