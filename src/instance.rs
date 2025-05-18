@@ -19,6 +19,7 @@ pub struct Instance {
     handle: vk::Instance,
     #[cfg(debug_assertions)]
     debug_messenger: vk::DebugUtilsMessengerEXT,
+    pub(crate) api_version: u32,
 }
 
 #[cfg(debug_assertions)]
@@ -139,6 +140,7 @@ impl Instance {
             handle,
             #[cfg(debug_assertions)]
             debug_messenger: null_mut(),
+            api_version: app_info.api_version,
         };
 
         #[cfg(debug_assertions)]

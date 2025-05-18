@@ -26,20 +26,24 @@ fn main() -> Result<()> {
         .create_window(1280, 720, "Magma", glfw::WindowMode::Windowed)
         .unwrap();
 
-    let instance = Instance::builder()
-        .app_name("triangle".to_owned())
-        .app_version(0, 1, 0)
-        .engine_name("magma".to_owned())
-        .engine_version(0, 1, 0)
-        .extend_extensions(glfw.get_required_instance_extensions().unwrap().into_iter())
-        .build()
-        .expect("Failed to initialize Vulkan instance");
+    let instance = Arc::new(
+        Instance::builder()
+            .app_name("triangle".to_owned())
+            .app_version(0, 1, 0)
+            .engine_name("magma".to_owned())
+            .engine_version(0, 1, 0)
+            .extend_extensions(glfw.get_required_instance_extensions().unwrap().into_iter())
+            .build()
+            .expect("Failed to initialize Vulkan instance"),
+    );
 
     let mut surface: vk::SurfaceKHR = std::ptr::null_mut();
     unsafe {
+        let instance_handle = instance.handle();
+
         window
             .create_window_surface(
-                std::mem::transmute_copy(&instance.handle()),
+                std::mem::transmute_copy(&instance_handle),
                 std::ptr::null(),
                 std::mem::transmute_copy(&&mut surface),
             )
@@ -77,6 +81,7 @@ fn main() -> Result<()> {
 
             let device = Arc::new(
                 Device::builder()
+                    .instance(instance.clone())
                     .physical_device(physical_device)
                     .order_queue(queue_family, &mut queue)
                     .extend_extensions(device_extensions)

@@ -1,3 +1,4 @@
+mod buffer;
 mod command;
 mod device;
 mod display;
@@ -13,6 +14,7 @@ mod render_pass;
 mod swapchain;
 pub mod sync;
 
+pub use buffer::Buffer;
 pub use command::CommandBuffer;
 pub use command::CommandPool;
 pub use device::Device;

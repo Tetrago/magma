@@ -1,3 +1,6 @@
 [submodule "vulkan-sys/Vulkan-Headers"]
 	path = vulkan-sys/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers.git
+[submodule "vma-sys/VulkanMemoryAllocator"]
+	path = vma-sys/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git

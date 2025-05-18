@@ -12,6 +12,9 @@ path = "magma-proc"
 [dependencies.vulkan-sys]
 path = "vulkan-sys"
 
+[dependencies.vma-sys]
+path = "vma-sys"
+
 [dev-dependencies.glfw]
 version = "0.59"
 features = ["vulkan"]

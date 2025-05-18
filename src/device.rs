@@ -1,10 +1,13 @@
 use crate::Error;
+use crate::Instance;
 use crate::PhysicalDevice;
 use crate::Result;
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::ptr::null;
 use std::ptr::null_mut;
+use std::sync::Arc;
+use vma_sys::vma;
 use vulkan_sys::call;
 use vulkan_sys::vk;
 
@@ -13,6 +16,8 @@ pub struct Device {
     #[object]
     handle: vk::Device,
     physical_device: PhysicalDevice,
+    _instance: Arc<Instance>,
+    allocator: vma::Allocator,
 }
 
 impl Device {
@@ -22,6 +27,7 @@ impl Device {
 
     fn new(builder: Builder) -> Result<Self> {
         let priority: f32 = 1.0;
+        let instance = builder.instance.unwrap();
         let physical_device = builder.physical_device.unwrap();
 
         let queue_create_infos = builder
@@ -81,10 +87,28 @@ impl Device {
             });
         });
 
-        Ok(Self {
+        let mut obj = Self {
             handle,
-            physical_device,
-        })
+            physical_device: physical_device.clone(),
+            _instance: instance.clone(),
+            allocator: null_mut(),
+        };
+
+        let functions = vma::VulkanFunctions::default()
+            .vk_get_instance_proc_addr(Some(vk::get_instance_proc_addr))
+            .vk_get_device_proc_addr(Some(vk::get_device_proc_addr));
+
+        let create_info = vma::AllocatorCreateInfo::default()
+            .flags(vma::ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT)
+            .vulkan_api_version(instance.api_version)
+            .physical_device(physical_device.handle)
+            .device(handle)
+            .instance(instance.handle())
+            .vulkan_functions(&functions);
+
+        call!(vma::create_allocator(&create_info, &mut obj.allocator))?;
+
+        Ok(obj)
     }
 
     pub fn wait(&self) -> Result<()> {
@@ -101,6 +125,11 @@ impl Drop for Device {
     fn drop(&mut self) {
         unsafe {
             let _ = vk::device_wait_idle(self.handle);
+
+            if !self.allocator.is_null() {
+                vma::destroy_allocator(self.allocator);
+            }
+
             vk::destroy_device(self.handle, null());
         }
     }
@@ -109,6 +138,8 @@ impl Drop for Device {
 #[derive(magma_proc::Builder)]
 #[builder(target = Device)]
 pub struct Builder<'a> {
+    #[builder(required)]
+    instance: Option<Arc<Instance>>,
     #[builder(required)]
     physical_device: Option<PhysicalDevice>,
     queues: HashMap<u32, Vec<&'a mut Option<vk::Queue>>>,
